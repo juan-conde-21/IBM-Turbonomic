@@ -1,260 +1,217 @@
-# Guía de despliegue Kubeturbo en Red Hat OpenShift mediante YAML
+# Guía de despliegue controlado de KubeTurbo en Red Hat OpenShift mediante YAML
 
-**Producto:** IBM Turbonomic Kubeturbo\
-**Versión:** 8.20.6\
-**Método:** YAML\
-**Perfil inicial:** Reader (`turbo-cluster-reader`)
+**Producto:** IBM Turbonomic KubeTurbo  
+**Método:** YAML directo  
+**Perfil inicial:** Reader (`turbo-cluster-reader`)  
+**Versión de referencia del ejemplo:** 8.21.1  
+**Objetivo:** desplegar KubeTurbo en OpenShift con permisos de lectura y recursos definidos desde el inicio.
 
-------------------------------------------------------------------------
+> El YAML completo está incluido en esta guía para que pueda utilizarse como referencia directa. Antes de aplicarlo, se deben reemplazar versión, URL, credenciales y nombre del clúster. Para otra versión de Turbonomic se recomienda descargar el `kubeturbo_reader_full.yaml` oficial de esa misma versión y comparar los cambios de RBAC.
 
-# 1. Objetivo
+---
 
-Este documento describe el procedimiento para desplegar Kubeturbo en un
-clúster Red Hat OpenShift utilizando el manifiesto YAML oficial de IBM
-Turbonomic.
+# 1. Qué hace KubeTurbo
 
-La implementación inicial considera un despliegue controlado para una
-fase de POC:
+KubeTurbo es el componente que conecta un clúster Kubernetes/OpenShift con Turbonomic.
 
--   Despliegue mediante YAML (sin Operator).
--   Permisos de solo lectura.
--   Validación de descubrimiento del clúster.
--   Control inicial de consumo de recursos.
+Permite:
 
-Posteriormente, dependiendo del alcance requerido (por ejemplo ejecución
-de acciones Move/Resize), se podrá evaluar el cambio hacia un perfil con
-mayores permisos.
+- descubrir nodos, pods, namespaces y workload controllers;
+- leer capacidad y utilización;
+- enviar información del clúster a Turbonomic;
+- generar recomendaciones de optimización;
+- ejecutar acciones cuando posteriormente se habilitan los permisos correspondientes.
 
-------------------------------------------------------------------------
+Para la primera fase se recomienda utilizar **Reader**. De esta manera se valida discovery, consumo y recomendaciones sin ejecutar cambios sobre el clúster.
 
-# 2. Alcance inicial
+---
 
-El YAML utilizado corresponde al perfil:
+# 2. Capacidad inicial
 
-    turbo-cluster-reader
+Antes de desplegar se debe revisar el tamaño del clúster.
 
-Este perfil permite:
+Para un ambiente de hasta **5.000 pods** y **5.000 workload controllers**, la configuración inicial utilizada en esta guía es:
 
--   Descubrimiento de recursos OpenShift/Kubernetes.
--   Recolección de información del clúster.
--   Generación de recomendaciones en Turbonomic.
+| Recurso | Valor |
+|---|---:|
+| Réplicas | `1` |
+| CPU request | `1000m` |
+| CPU limit | **No definir** |
+| Memory request | `1Gi` |
+| Memory limit | `4Gi` |
 
-No habilita inicialmente:
+IBM recomienda no establecer CPU limit para KubeTurbo para evitar throttling.
 
--   Movimiento de pods.
--   Modificación automática de workloads.
--   Ejecución de acciones.
+## 2.1 Tabla de sizing de memoria
 
-------------------------------------------------------------------------
+| Pods | Workload controllers | Memory limit |
+|---:|---:|---:|
+| 5.000 | 2.500 | 4 Gi |
+| 5.000 | 5.000 | 4 Gi |
+| 10.000 | 5.000 | 6 Gi |
+| 10.000 | 10.000 | 6.5 Gi |
+| 20.000 | 10.000 | 9.2 Gi |
+| 20.000 | 20.000 | 12 Gi |
+| 30.000 | 15.000 | 13 Gi |
+| 30.000 | 30.000 | 16 Gi |
 
-# 3. Prerrequisitos
+Referencia IBM:  
+https://www.ibm.com/docs/en/tarm/8.x?topic=requirements-kubeturbo-resource-limits
 
-## 3.1 Información requerida
+---
 
-  Parámetro            Descripción
-  -------------------- ----------------------------------------
-  Turbonomic Server    URL HTTPS del servidor
-  Versión Turbonomic   Debe coincidir con la imagen Kubeturbo
-  Client ID            OAuth 2.0 generado en Turbonomic
-  Client Secret        OAuth 2.0 generado en Turbonomic
-  Nombre del Target    Nombre del clúster OpenShift
+# 3. Revisar el tamaño del clúster
 
-------------------------------------------------------------------------
+Cantidad de pods:
 
-# 4. Parámetros a modificar en el YAML
-
-Antes de aplicar el manifiesto se deben actualizar los siguientes
-valores.
-
-------------------------------------------------------------------------
-
-## 4.1 Namespace
-
-Buscar:
-
-``` yaml
-namespace: turbonomic
+```bash
+oc get pods -A --no-headers | wc -l
 ```
 
-Validar que el namespace corresponda al definido para la instalación.
+Conteo inicial de controllers:
 
-------------------------------------------------------------------------
-
-## 4.2 Credenciales Turbonomic
-
-Ubicación:
-
-``` yaml
-kind: Secret
+```bash
+oc get deployments,statefulsets,daemonsets -A --no-headers | wc -l
 ```
 
-Modificar:
+Registrar:
 
-``` yaml
+| Dato | Valor |
+|---|---|
+| Versión Turbonomic | |
+| Versión OpenShift | |
+| Pods | |
+| Workload controllers | |
+| Memory limit seleccionado | |
+| Namespace | `turbonomic` |
+| Target name | |
+
+Si el clúster supera 5.000 pods/controllers, ajustar el `memory limit` usando la tabla anterior.
+
+---
+
+# 4. Prerrequisitos
+
+Se requiere:
+
+- acceso `oc`;
+- permisos para crear ServiceAccount, ClusterRole, ClusterRoleBinding, ConfigMap, Secret, Deployment, Role y RoleBinding;
+- Turbonomic disponible por HTTPS;
+- OAuth Client ID y Client Secret;
+- acceso al OpenShift API Server;
+- acceso desde KubeTurbo a kubelets por TCP 10250;
+- acceso a `icr.io` o a una registry privada.
+
+---
+
+# 5. Validar versión
+
+La versión de KubeTurbo debe coincidir con la versión de Turbonomic.
+
+Ejemplo utilizado:
+
+```text
+Turbonomic : 8.21.1
+KubeTurbo  : 8.21.1
+```
+
+Para otra versión:
+
+```bash
+export TURBO_VERSION="<VERSION_TURBONOMIC>"
+```
+
+Y descargar el manifiesto oficial:
+
+```bash
+curl -fL   -o kubeturbo_reader_full.yaml   "https://raw.githubusercontent.com/IBM/turbonomic-container-platform/${TURBO_VERSION}/kubeturbo/yamls/kubeturbo_reader_full.yaml"
+```
+
+Repositorio IBM:  
+https://github.com/IBM/turbonomic-container-platform
+
+---
+
+# 6. Valores que se deben modificar en el YAML
+
+Antes de aplicar el ejemplo, cambiar estos valores.
+
+## 6.1 Credenciales
+
+Generar Base64:
+
+```bash
+printf '%s' "<CLIENT_ID>" | base64 -w0
+echo
+printf '%s' "<CLIENT_SECRET>" | base64 -w0
+echo
+```
+
+Reemplazar:
+
+```yaml
 clientid: <Client_id_encoded_base64>
-
 clientsecret: <Client_secret_encoded_base64>
 ```
 
-Los valores deben estar codificados en Base64:
+## 6.2 Servidor Turbonomic
 
-``` bash
-echo -n "valor" | base64
+Reemplazar:
+
+```json
+"turboServer": "https://turbonomic.example.local"
 ```
 
-------------------------------------------------------------------------
+## 6.3 Nombre del clúster
 
-## 4.3 Servidor Turbonomic
+Reemplazar:
 
-Ubicación:
-
-``` yaml
-turbo.config
+```json
+"targetName":"ocp-cluster-01"
 ```
 
-Modificar:
+## 6.4 Versión
 
-``` json
-"turboServer": "<https://Turbo_Server_URL_or_IP_address>"
+Si no se utiliza 8.21.1, modificar **los dos puntos**:
+
+```json
+"version": "8.21.1"
 ```
 
-Ejemplo:
+y:
 
-``` json
-"turboServer": "https://turbonomic.company.local"
+```yaml
+image: icr.io/cpopen/turbonomic/kubeturbo:8.21.1
 ```
 
-------------------------------------------------------------------------
+## 6.5 Recursos
 
-## 4.4 Nombre del clúster
+Para hasta 5.000 pods/controllers:
 
-Modificar:
-
-``` json
-"targetName":"<Your_Cluster_Name>"
-```
-
-Este valor será utilizado como nombre del Target dentro de Turbonomic.
-
-------------------------------------------------------------------------
-
-## 4.5 Imagen Kubeturbo
-
-Validar:
-
-``` yaml
-image: icr.io/cpopen/turbonomic/kubeturbo:8.20.6
-```
-
-La versión debe coincidir con la versión del servidor Turbonomic.
-
-------------------------------------------------------------------------
-
-# 5. Control de recursos del Deployment
-
-Para la primera fase de validación se recomienda agregar límites
-explícitos al contenedor.
-
-Ubicación:
-
-``` yaml
-kind: Deployment
-
-containers:
-- name: kubeturbo
-```
-
-Agregar:
-
-``` yaml
+```yaml
 resources:
   requests:
-    cpu: "500m"
+    cpu: "1000m"
     memory: "1Gi"
   limits:
-    memory: "2Gi"
+    memory: "4Gi"
 ```
 
-Consideraciones:
+No agregar CPU limit.
 
--   Se utiliza `500m` de CPU inicialmente para una POC controlada.
--   Se evita definir `cpu limit` para prevenir throttling.
--   La memoria podrá ajustarse según cantidad de pods y workloads
-    administrados.
+---
 
-------------------------------------------------------------------------
+# 7. YAML completo de referencia
 
-# 6. Despliegue
+Este es el manifiesto Reader completo utilizado como guía, con el bloque `resources` ya incorporado.
 
-Crear namespace:
-
-``` bash
-oc create namespace turbonomic
-```
-
-Aplicar manifiesto:
-
-``` bash
-oc apply -f kubeturbo_reader_full.yaml
-```
-
-------------------------------------------------------------------------
-
-# 7. Validaciones
-
-## Validar pod
-
-``` bash
-oc get pods -n turbonomic
-```
-
-Resultado esperado:
-
-    kubeturbo-xxxxx   1/1   Running
-
-------------------------------------------------------------------------
-
-## Revisar logs
-
-``` bash
-oc logs deployment/kubeturbo -n turbonomic
-```
-
-Validar:
-
--   Conexión con Turbonomic.
--   Discovery correcto.
--   Sin errores RBAC.
-
-------------------------------------------------------------------------
-
-## Revisar consumo
-
-``` bash
-oc adm top pod -n turbonomic
-```
-
-Registrar consumo inicial durante la POC.
-
-------------------------------------------------------------------------
-
-# 8. YAML completo de despliegue
-
-El siguiente bloque corresponde al YAML utilizado para el despliegue
-inicial.
-
-Antes de aplicar, realizar las modificaciones indicadas en la sección
-anterior.
-
-``` yaml
+```yaml
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  # Update the namespace value if required
   name: turbo-user
   namespace: turbonomic
 ---
-#option to use secret for Turbo credentials
 apiVersion: v1
 kind: Secret
 metadata:
@@ -262,8 +219,6 @@ metadata:
   namespace: turbonomic
 type: Opaque
 data:
-  # username: <Username_encoded_base64>
-  # password: <Password_encoded_base64>
   clientid: <Client_id_encoded_base64>
   clientsecret: <Client_secret_encoded_base64>
 ---
@@ -398,50 +353,25 @@ rules:
       - watch
 ---
 kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1    
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  # use this yaml to create a binding that will assign cluster-admin to your turbo ServiceAccount 
-  # Provide a value for the binding name: and update namespace if needed
-  # The name should be unique for Kubeturbo instance
   name: turbo-all-binding-kubeturbo-turbo
   namespace: turbonomic
 subjects:
 - kind: ServiceAccount
-  # Provide the correct value for service account name: and namespace if needed
   name: turbo-user
   namespace: turbonomic
 roleRef:
-  # User creating this resource must have permissions to add this policy to the SA
   kind: ClusterRole
-# for other limited cluster admin roles, see samples provided
   name: turbo-cluster-reader
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  # use this yaml to provide details kubeturbo will use to connect to the Turbo Server
-  # requires Turbo Server and kubeturbo pod 6.4.3 and higher 
-  # Provide a value for the config name: and update namespace if needed
   name: turbo-config
   namespace: turbonomic
 data:
-  # Update the values for version, turboServer, opsManagerUserName, opsManagerPassword
-  # For version, use Turbo Server Version, even when running CWOM
-  # The opsManagerUserName requires Turbo administrator role
-  #
-  # For targetConfig, targetName provides better group naming to identify k8s clusters in UI
-  # - If no targetConfig is specified, a default targetName will be created from the apiserver URL in
-  #   the kubeconfig.
-  # - Specify a targetName only will register a probe with type Kubernetes-<targetName>, as well as
-  #   adding your cluster as a target with the name Kubernetes-<targetName>.
-  # - Specify a targetType only will register a probe without adding your cluster as a target.
-  #   The probe will appear as a Cloud Native probe in the UI with a type Kubernetes-<targetType>.
-  #
-  # Define node groups by node role, and automatically enable placement policies to limit to 1 per host
-  # DaemonSets are identified by default. Use daemonPodDetectors to identify by name patterns using regex or by namespace.
-  #
-  # serverMeta.proxy format for authenticated and non-authenticated "http://username:password@proxyserver:proxyport or http://proxyserver:proxyport"
   turbo-autoreload.config: |-
     {
       "logging": {
@@ -481,15 +411,15 @@ data:
     {
         "communicationConfig": {
             "serverMeta": {
-                "version": "8.20.6",
-                "turboServer": "<https://Turbo_Server_URL_or_IP_address>"
+                "version": "8.21.1",
+                "turboServer": "https://turbonomic.example.local"
             },
             "restAPIConfig": {
                 "turbonomicCredentialsSecretName": "turbonomic-credentials"
             }
         },
         "targetConfig": {
-            "targetName":"<Your_Cluster_Name>"
+            "targetName":"ocp-cluster-01"
         },
         "HANodeConfig": {
             "nodeRoles": [ "master"]
@@ -499,8 +429,6 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  # use this yaml to deploy the kubeturbo pod 
-  # Provide a value for the deploy/pod name: and update namespace if needed
   name: kubeturbo
   namespace: turbonomic
 spec:
@@ -517,99 +445,47 @@ spec:
       labels:
         app.kubernetes.io/name: kubeturbo
     spec:
-      # If using a private registry, specify the image pull secret name here
+      # Si se utiliza una registry privada:
       # imagePullSecrets:
-      #  - name: <your-image-pull-secret-name>
-      #
-      # Update serviceAccount if needed
+      # - name: <image-pull-secret>
       serviceAccount: turbo-user
-      #
-      # Assigning Kubeturbo to node, see 
-      # https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/ 
-      #
-      # nodeSelector:
-      #   kubernetes.io/hostname: worker0
-      #
-      # Or, use affinity:
-      #
-      # affinity:
-      #   nodeAffinity:
-      #       requiredDuringSchedulingIgnoredDuringExecution:
-      #         nodeSelectorTerms:
-      #         - matchExpressions:
-      #           - key: kubernetes.io/hostname
-      #             operator: In
-      #             values:
-      #             - worker1
-      #
-      # Or, use taints and tolerations
-      #
-      # tolerations:
-      # - key: "key1"
-      #   operator: "Equal"
-      #   value: "mytaint"
-      #   effect: "NoSchedule"
       securityContext:
         runAsNonRoot: true
       containers:
       - name: kubeturbo
-        # Replace the image version with matching Turbo Server version such as 8.13.0
-        image: icr.io/cpopen/turbonomic/kubeturbo:8.20.6
+        image: icr.io/cpopen/turbonomic/kubeturbo:8.21.1
+
+        # Sizing inicial para hasta 5.000 pods / 5.000 workload controllers.
+        # Ajustar memory limit según la tabla de sizing del procedimiento.
+        # No definir CPU limit para evitar throttling.
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "1Gi"
+          limits:
+            memory: "4Gi"
+
         env:
         - name: KUBETURBO_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        # Set SKIP_TAG_CHECK to "true" to skip tag check during probe upgrade
         - name: SKIP_TAG_CHECK
           value: "false"
         args:
         - --turboconfig=/etc/kubeturbo/turbo.config
         - --v=2
-        # Comment out the following two args if running in k8s 1.10 or older, or
-        # change to https=false and port=10255 if unsecure kubelet read only is configured
         - --kubelet-https=true
         - --kubelet-port=10250
-        # SECURITY: Set to true to use the node proxy endpoint for kubelet connections
         - --use-node-proxy-endpoint=false
-        # Uncomment for pod moves in OpenShift
-        #- --scc-support=*
-        # Uncomment for pod moves with pvs
-        #- --fail-volume-pod-moves=false
-        # Uncomment to override default, and specify your own location
-        #- --busybox-image=docker.io/busybox
-        # or uncomment below to pull from RHCC
-        #- --busybox-image=registry.access.redhat.com/ubi9/ubi-minimal
-        # Uncomment to specify the secret name which holds the credentials to busybox image
-        #- --busybox-image-pull-secret=<secret-name>
-        # Specify nodes to exclude from cpu frequency getter job.
-        # Note kubernetes.io/os=windows and/or beta.kubernetes.io/os=windows labels will be automatically excluded by default.
-        # If specified all the labels will be used to select the node ignoring the default.
-        #- --cpufreq-job-exclude-node-labels=kubernetes.io/key=value
-        # The complete cpufreqgetter image uri used for fallback node cpu frequency getter job.
-        #- --cpufreqgetter-image=icr.io/cpopen/turbonomic/cpufreqgetter
-        # The cpufreqgetter image tag, valid for Kubeturbo version 8.16.5+ and the valid options are the Turbo released version after 8.16.5 or using latest otherwise.
-        #- --cpufreqgetter-image-tag=latest
-        # The name of the secret that stores the image pull credentials for cpufreqgetter image.
-        #- --cpufreqgetter-image-pull-secret=<secret-name>
-        # Uncomment to stitch using IP, or if using Openstack, Hyper-V/VMM
-        #- --stitch-uuid=false
-        # Uncomment to customize readiness retry threshold. Kubeturbo will try readiness-retry-threshold times before giving up. Default is 60. The retry interval is 10s.
-        #- --readiness-retry-threshold=60
-        # Uncomment to disable the cleanup of the resources which are created by kubeturbo for the scc impersonation.
-        #- --cleanup-scc-impersonation-resources=false
-        # Uncomment to skip creating the resources the scc impersonation
-        #- --skip-creating-scc-impersonation-resources=true
-        # [ArgoCD integration] The email to be used to push changes to git
-        #- --git-email=""
-        # [ArgoCD integration] The username to be used to push changes to git
-        #- --git-username=""
-        # [ArgoCD integration] The name of the secret which holds the git credentials
-        #- --git-secret-name""
-        # [ArgoCD integration] The namespace of the secret which holds the git credentials
-        #- --git-secret-namespace=""
-        # [ArgoCD integration] The commit mode that should be used for git action executions. One of {request|direct}. Defaults to direct
-        #- --git-commit-mode=""
+
+        # Opciones que deben habilitarse solo si el caso de uso lo requiere.
+        # - --scc-support=*
+        # - --fail-volume-pod-moves=false
+        # - --busybox-image=registry.access.redhat.com/ubi9/ubi-minimal
+        # - --stitch-uuid=false
+        # - --readiness-retry-threshold=60
+
         securityContext:
           privileged: false
           allowPrivilegeEscalation: false
@@ -621,12 +497,10 @@ spec:
         - resourceName: memory
           restartPolicy: RestartContainer
         volumeMounts:
-        # volume will be created, any name will work and must match below
         - name: turbo-volume
           mountPath: /etc/kubeturbo
           readOnly: true
         - name: turbonomic-credentials-volume
-          # This mount path cannot be changed
           mountPath: /etc/turbonomic-credentials
           readOnly: true
         - name: varlog
@@ -634,18 +508,15 @@ spec:
       volumes:
       - name: turbo-volume
         configMap:
-         # Update configMap name if needed
           name: turbo-config
       - name: turbonomic-credentials-volume
         secret:
           defaultMode: 420
           optional: true
-          # Update secret name if needed
           secretName: turbonomic-credentials
       - name: varlog
         emptyDir: {}
       restartPolicy: Always
-# this is to create a role with permissions to update the kubeturbo deployment 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -653,11 +524,11 @@ metadata:
   name: turbo-user-role
   namespace: turbonomic
 rules:
-  - apiGroups: 
+  - apiGroups:
       - apps
     resources:
       - deployments
-    resourceNames: 
+    resourceNames:
       - kubeturbo
     verbs:
       - get
@@ -665,11 +536,6 @@ rules:
       - update
       - patch
       - list
-# If using an image pull secret. Uncomment the section below and change the pull-secret-name to the secret used.
-  # - apiGroups: [""]
-  #  resources: ["secrets"]
-  #  resourceNames: ["<your-image-pull-secret-name>"]          # change name of pull secret here
-  #  verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -685,37 +551,206 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ```
 
-------------------------------------------------------------------------
+---
 
-# 9. Evolución hacia permisos completos
+# 8. Crear namespace
 
-Para una fase posterior donde se requiera:
+Si no existe:
 
--   Move de pods.
--   Resize.
--   Ejecución automática de acciones.
-
-se deberá evaluar el cambio hacia el YAML con permisos administrativos
-mínimos requerido por Turbonomic.
-
-La ampliación de permisos se realizará únicamente después de validar:
-
--   Discovery correcto.
--   Consumo del agente.
--   Requerimiento funcional del cliente.
-
-------------------------------------------------------------------------
-
-# 10. Rollback
-
-Eliminar recursos creados:
-
-``` bash
-oc delete -f kubeturbo_reader_full.yaml
+```bash
+oc create namespace turbonomic
 ```
 
-Eliminar namespace:
+---
 
-``` bash
+# 9. Validar antes de aplicar
+
+Guardar el YAML como:
+
+```text
+kubeturbo_reader_full_controlado.yaml
+```
+
+Validar sintaxis:
+
+```bash
+oc apply --dry-run=client -f kubeturbo_reader_full_controlado.yaml
+```
+
+Validar contra el API Server:
+
+```bash
+oc apply --dry-run=server -f kubeturbo_reader_full_controlado.yaml
+```
+
+Revisar que no queden placeholders:
+
+```bash
+grep -n "<" kubeturbo_reader_full_controlado.yaml
+```
+
+Antes de continuar confirmar:
+
+- namespace correcto;
+- URL de Turbonomic correcta;
+- credenciales cargadas;
+- target name correcto;
+- versión correcta en ConfigMap e imagen;
+- requests/limits correctos;
+- sin CPU limit.
+
+---
+
+# 10. Desplegar
+
+```bash
+oc apply -f kubeturbo_reader_full_controlado.yaml
+```
+
+Validar:
+
+```bash
+oc get pods -n turbonomic
+```
+
+Resultado esperado:
+
+```text
+NAME                         READY   STATUS    RESTARTS
+kubeturbo-xxxxxxxxxx-xxxxx   1/1     Running   0
+```
+
+---
+
+# 11. Revisar consumo
+
+```bash
+oc adm top pods -n turbonomic
+```
+
+Registrar:
+
+| Momento | CPU | Memoria | Reinicios |
+|---|---:|---:|---:|
+| 15 minutos | | | |
+| 1 hora | | | |
+| 24 horas | | | |
+| 72 horas | | | |
+
+Verificar los recursos aplicados:
+
+```bash
+oc get deployment kubeturbo -n turbonomic   -o jsonpath='{.spec.template.spec.containers[0].resources}'
+echo
+```
+
+---
+
+# 12. Revisar logs
+
+```bash
+oc logs deployment/kubeturbo -n turbonomic --tail=200
+```
+
+Validar:
+
+- conexión con Turbonomic;
+- discovery;
+- ausencia de errores RBAC;
+- acceso a kubelets;
+- ausencia de reinicios/OOM.
+
+---
+
+# 13. Validar en Turbonomic
+
+Revisar:
+
+```text
+Settings -> Target Configuration
+```
+
+Confirmar:
+
+- target visible;
+- nodos descubiertos;
+- namespaces descubiertos;
+- workloads descubiertos;
+- recomendaciones generadas.
+
+En esta fase Reader no se busca ejecutar acciones.
+
+---
+
+# 14. Criterios de aceptación
+
+La instalación inicial queda validada cuando:
+
+- KubeTurbo está `Running`;
+- target visible en Turbonomic;
+- discovery correcto;
+- sin errores persistentes de RBAC;
+- sin OOM;
+- consumo estable;
+- recomendaciones disponibles;
+- sin ejecución de acciones.
+
+---
+
+# 15. Evolución a acciones
+
+Después de validar discovery y consumo, se puede evaluar un perfil con permisos adicionales para habilitar, según el caso:
+
+- resize;
+- move de pods;
+- acciones sobre nodos;
+- automatización.
+
+No ampliar permisos durante la validación inicial si todavía no se ha confirmado el comportamiento del agente.
+
+---
+
+# 16. Rollback
+
+Guardar evidencia:
+
+```bash
+oc get all -n turbonomic -o wide
+oc logs deployment/kubeturbo -n turbonomic > kubeturbo-before-rollback.log
+```
+
+Eliminar:
+
+```bash
+oc delete -f kubeturbo_reader_full_controlado.yaml
+```
+
+Eliminar namespace únicamente si fue creado de forma exclusiva para KubeTurbo:
+
+```bash
 oc delete namespace turbonomic
 ```
+
+---
+
+# 17. Referencias
+
+IBM - Kubeturbo resource limits  
+https://www.ibm.com/docs/en/tarm/8.x?topic=requirements-kubeturbo-resource-limits
+
+IBM - Kubeturbo deployment requirements  
+https://www.ibm.com/docs/en/tarm/8.x?topic=targets-kubeturbo-deployment-requirements
+
+IBM - Deploying Kubeturbo through YAML  
+https://www.ibm.com/docs/en/tarm/8.x?topic=clusters-deploying-kubeturbo-through-yaml
+
+IBM - Turbonomic Container Platform  
+https://github.com/IBM/turbonomic-container-platform
+
+---
+
+## Nota
+
+El YAML completo se incluye para facilitar la ejecución y servir como referencia durante una sesión con el cliente.
+
+Para nuevas versiones de Turbonomic, el manifiesto oficial de IBM de esa versión debe seguir siendo la fuente principal. Antes de reutilizar este ejemplo se debe comparar el RBAC y los parámetros con el `kubeturbo_reader_full.yaml` correspondiente al release instalado.
