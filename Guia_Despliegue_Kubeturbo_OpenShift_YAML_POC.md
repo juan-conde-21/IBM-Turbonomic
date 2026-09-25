@@ -16,10 +16,10 @@ KubeTurbo es el componente que conecta un clúster Kubernetes/OpenShift con **Tu
 
 Su función principal es colectar y enviar al Turbonomic Server la información necesaria del clúster, incluyendo:
 
-- nodos, pods, namespaces y workload controllers;
-- capacidad y utilización;
-- información requerida desde el API Server y los kubelets;
-- datos necesarios para que Turbonomic Server analice el entorno.
+- Nodos, pods, namespaces y workload controllers
+- Capacidad y utilización
+- Información requerida desde el API Server y los kubelets
+- Datos necesarios para que Turbonomic Server analice el entorno
 
 **KubeTurbo no genera las recomendaciones de optimización.** El análisis y la generación de acciones/recomendaciones se realizan en **Turbonomic Server**. KubeTurbo actúa como componente de recolección y, cuando se utilizan roles con permisos de ejecución, también puede aplicar las acciones que Turbonomic Server genera.
 
@@ -95,13 +95,13 @@ Si el clúster supera 5.000 pods/controllers, ajustar el `memory limit` usando l
 
 Se requiere:
 
-- acceso `oc`;
-- permisos para crear ServiceAccount, ClusterRole, ClusterRoleBinding, ConfigMap, Secret, Deployment, Role y RoleBinding;
-- Turbonomic disponible por HTTPS;
-- OAuth Client ID y Client Secret;
-- acceso al OpenShift API Server;
-- acceso desde KubeTurbo a kubelets por TCP 10250;
-- acceso a `icr.io` o a una registry privada.
+- Acceso `oc`
+- Permisos para crear ServiceAccount, ClusterRole, ClusterRoleBinding, ConfigMap, Secret, Deployment, Role y RoleBinding
+- Turbonomic disponible por HTTPS
+- OAuth Client ID y Client Secret
+- Acceso al OpenShift API Server
+- Acceso desde KubeTurbo a kubelets por TCP 10250
+- Acceso a `icr.io` o a una registry privada.
 
 ---
 
@@ -670,13 +670,13 @@ grep -n "<" kubeturbo_reader_full_controlado.yaml
 
 Antes de continuar confirmar:
 
-- namespace correcto;
-- URL de Turbonomic correcta;
-- credenciales cargadas;
-- target name correcto;
-- versión correcta en ConfigMap e imagen;
-- requests/limits correctos;
-- sin CPU limit.
+- Namespace correcto
+- URL de Turbonomic correcta
+- Credenciales cargadas
+- Target name correcto
+- Versión correcta en ConfigMap e imagen
+- Requests/limits correctos
+- Sin CPU limit
 
 ---
 
@@ -733,12 +733,12 @@ oc logs deployment/kubeturbo -n turbonomic --tail=200
 
 Validar:
 
-- conexión con Turbonomic Server;
-- autenticación correcta con `clientid` / `clientsecret`;
-- discovery;
-- ausencia de errores RBAC;
-- acceso a kubelets;
-- ausencia de reinicios/OOM.
+- Conexión con Turbonomic Server
+- Autenticación correcta con `clientid` / `clientsecret`
+- Discovery
+- Ausencia de errores RBAC
+- Acceso a kubelets
+- Ausencia de reinicios/OOM
 
 Si las credenciales se obtuvieron mediante script, un error de autenticación es un buen punto para confirmar que los valores no hayan sido codificados nuevamente en Base64.
 
@@ -754,11 +754,11 @@ Settings -> Target Configuration
 
 Confirmar:
 
-- target visible;
-- nodos descubiertos;
-- namespaces descubiertos;
-- workloads descubiertos;
-- recomendaciones generadas por Turbonomic Server.
+- Target visible
+- Nodos descubiertos
+- Namespaces descubiertos
+- Workloads descubiertos
+- Recomendaciones generadas por Turbonomic Server
 
 En esta fase el rol Reader no otorga a KubeTurbo permisos para ejecutar acciones sobre el clúster.
 
@@ -768,14 +768,14 @@ En esta fase el rol Reader no otorga a KubeTurbo permisos para ejecutar acciones
 
 La instalación inicial queda validada cuando:
 
-- KubeTurbo está `Running`;
-- target visible en Turbonomic;
-- discovery correcto;
-- sin errores persistentes de RBAC;
-- sin OOM;
-- consumo estable;
-- recomendaciones disponibles en Turbonomic Server;
-- sin ejecución de acciones.
+- KubeTurbo está `Running`
+- Target visible en Turbonomic
+- Discovery correcto
+- Sin errores persistentes de RBAC
+- Sin OOM
+- Consumo estable
+- Recomendaciones disponibles en Turbonomic Server
+- Sin ejecución de acciones
 
 ---
 
@@ -783,10 +783,10 @@ La instalación inicial queda validada cuando:
 
 Después de validar discovery y consumo, se puede evaluar un perfil con permisos adicionales para habilitar, según el caso:
 
-- resize;
-- move de pods;
-- acciones sobre nodos;
-- automatización.
+- Resize
+- Move de pods
+- Acciones sobre nodos
+- Automatización
 
 No ampliar permisos durante la validación inicial si todavía no se ha confirmado el comportamiento del agente.
 
