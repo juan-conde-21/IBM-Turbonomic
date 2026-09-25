@@ -12,17 +12,18 @@
 
 # 1. Qué hace KubeTurbo
 
-KubeTurbo es el componente que conecta un clúster Kubernetes/OpenShift con Turbonomic.
+KubeTurbo es el componente que conecta un clúster Kubernetes/OpenShift con **Turbonomic Server**.
 
-Permite:
+Su función principal es colectar y enviar al Turbonomic Server la información necesaria del clúster, incluyendo:
 
-- descubrir nodos, pods, namespaces y workload controllers;
-- leer capacidad y utilización;
-- enviar información del clúster a Turbonomic;
-- generar recomendaciones de optimización;
-- ejecutar acciones cuando posteriormente se habilitan los permisos correspondientes.
+- nodos, pods, namespaces y workload controllers;
+- capacidad y utilización;
+- información requerida desde el API Server y los kubelets;
+- datos necesarios para que Turbonomic Server analice el entorno.
 
-Para la primera fase se recomienda utilizar **Reader**. De esta manera se valida discovery, consumo y recomendaciones sin ejecutar cambios sobre el clúster.
+**KubeTurbo no genera las recomendaciones de optimización.** El análisis y la generación de acciones/recomendaciones se realizan en **Turbonomic Server**. KubeTurbo actúa como componente de recolección y, cuando se utilizan roles con permisos de ejecución, también puede aplicar las acciones que Turbonomic Server genera.
+
+Para la primera fase se recomienda utilizar **Reader (`turbo-cluster-reader`)**. De esta manera se valida discovery, consumo de KubeTurbo y las recomendaciones generadas por Turbonomic Server, **sin que KubeTurbo tenga permisos para ejecutar cambios sobre el clúster**.
 
 ---
 
@@ -30,7 +31,7 @@ Para la primera fase se recomienda utilizar **Reader**. De esta manera se valida
 
 Antes de desplegar se debe revisar el tamaño del clúster.
 
-Para un ambiente de hasta **5.000 pods** y **5.000 workload controllers**, la configuración inicial utilizada en esta guía es:
+Para un ambiente de hasta **5.000 pods** y **5.000 workload controllers**, la configuración inicial de **KubeTurbo** utilizada en esta guía es:
 
 | Recurso | Valor |
 |---|---:|
@@ -136,23 +137,101 @@ https://github.com/IBM/turbonomic-container-platform
 
 Antes de aplicar el ejemplo, cambiar estos valores.
 
-## 6.1 Credenciales
+## 6.1 Credenciales de Turbonomic
 
-Generar Base64:
+El YAML Reader utiliza un `clientid` y un `clientsecret` para registrar KubeTurbo contra Turbonomic Server.
+
+El bloque del Secret espera los valores **codificados en Base64**:
+
+```yaml
+data:
+  clientid: <Client_id_encoded_base64>
+  clientsecret: <Client_secret_encoded_base64>
+```
+
+### Opción A - Crear credenciales OAuth 2.0 desde Turbonomic
+
+IBM recomienda utilizar credenciales OAuth 2.0.
+
+1. Ingresar a la instancia de Turbonomic.
+2. Abrir:
+
+```text
+https://<TURBONOMIC_SERVER>/swagger/#/Authorization/createClient
+```
+
+3. Ejecutar `createClient` utilizando un cliente con scope `role:PROBE_ADMIN`.
+4. Guardar el `clientID` y `clientSecret` devueltos por la API.
+
+Body de referencia:
+
+```json
+{
+  "clientName": "kubeturbo",
+  "grantTypes": [
+    "client_credentials"
+  ],
+  "clientAuthenticationMethods": [
+    "client_secret_post"
+  ],
+  "scopes": [
+    "role:PROBE_ADMIN"
+  ],
+  "tokenSettings": {
+    "accessToken": {
+      "ttlSeconds": 600
+    }
+  }
+}
+```
+
+La respuesta de la API entrega `clientID` y `clientSecret` en texto. Antes de colocarlos en el YAML deben codificarse en Base64.
+
+Linux:
 
 ```bash
 printf '%s' "<CLIENT_ID>" | base64 -w0
 echo
+
 printf '%s' "<CLIENT_SECRET>" | base64 -w0
 echo
 ```
 
-Reemplazar:
+Luego copiar los valores resultantes:
 
 ```yaml
-clientid: <Client_id_encoded_base64>
-clientsecret: <Client_secret_encoded_base64>
+data:
+  clientid: <CLIENT_ID_EN_BASE64>
+  clientsecret: <CLIENT_SECRET_EN_BASE64>
 ```
+
+> Guardar el `clientID` y `clientSecret` en el momento de crearlos. IBM indica que el `clientSecret` no puede recuperarse posteriormente desde la API.
+
+### Opción B - Utilizar un script existente en el ambiente
+
+Si se utiliza un script ya disponible para obtener/generar las credenciales de KubeTurbo desde Turbonomic, validar el formato de salida antes de modificar el Secret.
+
+Si el script entrega:
+
+```text
+clientid=<valor_base64>
+clientsecret=<valor_base64>
+```
+
+los valores **ya están en Base64** y se copian directamente al YAML.
+
+**No volver a ejecutar `base64` sobre esos valores**, porque quedarían codificados dos veces y KubeTurbo no podrá autenticarse.
+
+Ejemplo:
+
+```yaml
+data:
+  clientid: <VALOR_BASE64_ENTREGADO_POR_EL_SCRIPT>
+  clientsecret: <VALOR_BASE64_ENTREGADO_POR_EL_SCRIPT>
+```
+
+Referencia IBM:  
+https://www.ibm.com/docs/en/tarm/8.x?topic=clusters-deploying-kubeturbo-through-yaml
 
 ## 6.2 Servidor Turbonomic
 
@@ -654,11 +733,14 @@ oc logs deployment/kubeturbo -n turbonomic --tail=200
 
 Validar:
 
-- conexión con Turbonomic;
+- conexión con Turbonomic Server;
+- autenticación correcta con `clientid` / `clientsecret`;
 - discovery;
 - ausencia de errores RBAC;
 - acceso a kubelets;
 - ausencia de reinicios/OOM.
+
+Si las credenciales se obtuvieron mediante script, un error de autenticación es un buen punto para confirmar que los valores no hayan sido codificados nuevamente en Base64.
 
 ---
 
@@ -676,9 +758,9 @@ Confirmar:
 - nodos descubiertos;
 - namespaces descubiertos;
 - workloads descubiertos;
-- recomendaciones generadas.
+- recomendaciones generadas por Turbonomic Server.
 
-En esta fase Reader no se busca ejecutar acciones.
+En esta fase el rol Reader no otorga a KubeTurbo permisos para ejecutar acciones sobre el clúster.
 
 ---
 
@@ -692,7 +774,7 @@ La instalación inicial queda validada cuando:
 - sin errores persistentes de RBAC;
 - sin OOM;
 - consumo estable;
-- recomendaciones disponibles;
+- recomendaciones disponibles en Turbonomic Server;
 - sin ejecución de acciones.
 
 ---
